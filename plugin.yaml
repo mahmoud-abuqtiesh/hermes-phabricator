@@ -1,0 +1,59 @@
+name: phabricator
+label: Phabricator
+kind: platform
+version: 0.1.0
+description: >
+  Phabricator Maniphest gateway adapter for Hermes Agent.
+  Receives Phabricator webhooks (HMAC-verified), turns new tasks and @-mentions
+  into agent sessions (one session per task) and posts the agent's reply as a
+  Maniphest comment.
+requires_env:
+  - name: PHABRICATOR_URL
+    description: "Phabricator base URL, e.g. https://phabricator.example.com"
+    prompt: "Phabricator URL"
+    password: false
+  - name: PHABRICATOR_API_TOKEN
+    description: "Conduit API token of the bot user (Settings > Conduit API Tokens)"
+    prompt: "Bot Conduit API token"
+    password: true
+  - name: PHABRICATOR_WEBHOOK_SECRET
+    description: "HMAC key shown on the Phabricator webhook page"
+    prompt: "Webhook HMAC key"
+    password: true
+optional_env:
+  - name: PHABRICATOR_BOT_HANDLE
+    description: "Handle that triggers the bot when written as @handle (default: the bot's own username)"
+    prompt: "Bot handle"
+    password: false
+  - name: PHABRICATOR_BOARD
+    description: "Only react to tasks tagged with this project (PHID, #slug or name). Empty = any task the webhook sends"
+    prompt: "Board project"
+    password: false
+  - name: PHABRICATOR_NEW_COLUMN
+    description: "Workboard column (PHID or name) whose new tasks trigger a first-pass run. Needs PHABRICATOR_BOARD. Empty = mentions only"
+    prompt: "New-task column"
+    password: false
+  - name: PHABRICATOR_ALLOWED_USERS
+    description: "Comma-separated Phabricator usernames allowed to talk to the bot"
+    prompt: "Allowed usernames"
+    password: false
+  - name: PHABRICATOR_ALLOW_ALL_USERS
+    description: "Allow every Phabricator user to mention the bot (true/false)"
+    prompt: "Allow all users?"
+    password: false
+  - name: PHABRICATOR_SKILL
+    description: "Skill name preloaded into every session this platform starts"
+    prompt: "Skill"
+    password: false
+  - name: PHABRICATOR_HOST
+    description: "Listener bind host (default 127.0.0.1)"
+    prompt: "Listener host"
+    password: false
+  - name: PHABRICATOR_PORT
+    description: "Listener bind port (default 8646; use a distinct port per profile)"
+    prompt: "Listener port"
+    password: false
+  - name: PHABRICATOR_POLL_INTERVAL
+    description: "Seconds between New-column polls that catch missed webhooks (0 = off, default)"
+    prompt: "Poll interval"
+    password: false
