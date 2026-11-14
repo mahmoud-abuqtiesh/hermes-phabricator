@@ -22,9 +22,12 @@ One task is one chat, so follow-up comments continue the same session.
 hermes plugins install <git url> --enable
 ```
 
-For a profile, install it into that profile.
+Third-party plugins load only when listed in `plugins.enabled`, and `--enable` does that.
 A manual install is a clone (or symlink) at `<HERMES_HOME>/plugins/phabricator`.
-Third-party plugins load only when listed in `plugins.enabled`.
+
+With `gateway.multiplex_profiles`, install it into the profile that serves Phabricator (`hermes -p <profile> plugins install ...`) and also into the default profile.
+The default profile never starts the adapter (it has no `PHABRICATOR_*` settings), but the gateway reads every profile's saved sessions at startup before the profile's plugins are discovered.
+Without the plugin in the default profile, those sessions are skipped as "not a valid Platform", and each task starts a fresh chat after a gateway restart.
 
 ## Minimal setup
 
