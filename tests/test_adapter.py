@@ -84,6 +84,11 @@ async def harness(**extra):
         await server.close()
 
 
+def adapter_event(adapter, chat_id):
+    from gateway.platforms.event import MessageEvent
+    return MessageEvent(text="x", source=adapter.build_source(chat_id=chat_id, chat_name="T7: Calls fail", chat_type="group"))
+
+
 def run(coro):
     asyncio.run(coro)
 
@@ -202,14 +207,14 @@ async def _dispatch_and_session_key():
         created = fake.add_task(8)
         await adapter._process(event(created, fake.add_transaction(created, "create")))
         a, b, c = adapter.events
-        assert a.source.chat_id == b.source.chat_id == "T7" and c.source.chat_id == "T8"
-        assert a.source.thread_id == "T7" and a.source.chat_type == "group"
+        assert a.source.chat_id == b.source.chat_id == task and c.source.chat_id == created
+        assert a.source.thread_id == task and a.source.chat_type == "group" and a.source.chat_name == "T7: Calls fail"
         assert a.source.user_id == "alice" and a.auto_skill == "triage"
         assert a.allow_gateway_control is False and a.internal is False and c.internal is True
-        assert "Calls drop after 5s" in c.text and "T8" in c.text
+        assert "Calls drop after 5s" in c.text and "T8" in c.text and c.text.startswith("New task T8")
         from gateway.session import build_session_key
         assert build_session_key(a.source) == build_session_key(b.source) != build_session_key(c.source)
-        other = adapter.build_source(chat_id="T7", chat_type="group", user_id="bob", thread_id="T7")
+        other = adapter.build_source(chat_id=task, chat_type="group", user_id="bob", thread_id=task)
         assert build_session_key(other) == build_session_key(a.source), "another commenter shares the task session"
 
 
@@ -225,6 +230,10 @@ async def _send():
         assert (await adapter.send("T7", "no home channel")).success
         assert (await adapter.send("T7", "   ", metadata=final)).success
         assert len(fake.comments_by(task, fc.BOT)) == 1, "interim, unmarked and blank sends post nothing"
+        assert (await adapter.send(task, "by phid", metadata=final)).success, "a PHID works as the chat id"
+        await adapter._notify_turn_error(adapter_event(adapter, task), RuntimeError("provider down: secret-detail"))
+        posted = fake.comments_by(task, fc.BOT)
+        assert posted[-2:] == ["by phid", phab.TURN_ERROR_COMMENT] and "secret-detail" not in posted[-1]
         missing = await adapter.send("T999", "x", metadata=final)
         assert not missing.success and not missing.retryable and "ERR-INVALID-PARAMETER" in missing.error
         adapter.conduit._token = "wrong"
@@ -244,7 +253,7 @@ async def _poller():
         fake.tasks[stale]["fields"]["dateModified"] = 1
         other_column = fake.add_task(10, column=fc.DONE_COLUMN)
         assert await adapter.poll_once() == 1
-        assert [e.source.chat_id for e in adapter.events] == ["T7"]
+        assert [e.source.chat_id for e in adapter.events] == [fresh]
         assert await adapter.poll_once() == 0, "polling twice must not rerun a task"
         created = fake.add_transaction(fresh, "create")
         assert await modes(adapter, event(fresh, created)) == [], "webhook after poll must not rerun"
@@ -280,7 +289,7 @@ async def _http_end_to_end():
                 if adapter.events:
                     break
                 await asyncio.sleep(0.05)
-            assert [e.source.chat_id for e in adapter.events] == ["T7"]
+            assert [e.source.chat_id for e in adapter.events] == [task]
             async with http.get(url + "/health") as r:
                 assert r.status == 200
         await adapter._runner.cleanup()

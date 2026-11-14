@@ -81,6 +81,7 @@ The non-secret ones can instead live under `platforms.phabricator.extra` in `con
 | `PHABRICATOR_ALLOW_ALL_USERS` | `allow_all_users` | Any Phabricator user may mention the bot. |
 | `PHABRICATOR_SKILL` | `skill` | Skill preloaded into every session this platform starts. |
 | `PHABRICATOR_HOST` / `PHABRICATOR_PORT` | `host` / `port` | Listener bind. Default `127.0.0.1:8646`. Use a distinct port per profile. |
+| `PHABRICATOR_WEBHOOK_PATH` | `webhook_path` | Listener path. Default `/phabricator/webhook`. Set it to the public path (for example `/p/<profile>/webhooks/phab`) to avoid a proxy rewrite. |
 | `PHABRICATOR_POLL_INTERVAL` | `poll_interval` | Seconds between New-column polls. `0` (default) is off. |
 | `PHABRICATOR_POLL_LOOKBACK` | `poll_lookback` | Only tasks modified within this many seconds are polled. Default 3600. |
 
@@ -101,7 +102,8 @@ A name that matches zero or several projects or columns fails the connect with a
 ## Behavior notes
 
 - Only the agent's final reply becomes a comment.
-  Busy acknowledgements, the "no home channel" nudge, progress lines and gateway error notices also pass through the adapter and are dropped.
+  Busy acknowledgements, the "no home channel" nudge and progress lines also pass through the adapter and are dropped.
+- If a run fails (provider down, crash), the task gets one fixed line, "Could not investigate this task: the agent run failed. Mention me again to retry.", and never the exception text.
 - Task text is untrusted, so it can never run gateway commands such as `/new`.
 - New-task events are an admin choice (the configured column), so they skip the user allowlist.
   Mentions follow the normal gateway allowlist, and unauthorized mentions are ignored silently.
@@ -126,9 +128,14 @@ Remove any "add comment" tool from the profile's tool list.
 Without that filter the first live test posted the "no home channel" nudge and the busy acknowledgement as task comments.
 
 **Session per task.**
-The chat id is the task monogram (`T123`), chat type `group`, and the thread id is the same monogram.
+The chat id is the task PHID, chat type `group`, and the thread id is the same PHID (the name shown to the agent is `T123: title`).
+The PHID rather than `T123` keeps sessions from colliding when a profile is later pointed at a different or rebuilt Phabricator.
 Group sessions are normally split per participant, and a thread id is what keeps every commenter in the task's one session.
 Verified: three comments on one task produced user turn counts 1, 2, 3 in one session, a new-task run and later mentions share it, and an unauthorized comment does not enter it.
+
+**Failed runs.**
+The base adapter's turn-error notice carries exception text and has no final-reply marker, so it is dropped like other notices.
+The adapter overrides `_notify_turn_error` to post the one fixed line above instead.
 
 **Busy input.**
 The gateway default interrupts a running turn when another message arrives for the same session.
@@ -155,6 +162,13 @@ MCP toolset names are passed through by the same mechanism; that was not exercis
   The plugin asks `maniphest.search` with the `columnPHIDs` constraint instead.
 - The signature header is lowercase hex HMAC-SHA256 of the raw body.
 - Transaction order inside a payload is not chronological, so nothing depends on it.
+
+## Known limits
+
+- Deduplication is in memory (one hour), so a restart can rerun a transaction that Phabricator redelivers.
+- The poller recovers missed new tasks only, not missed mentions.
+- Tested against firehose webhooks only, not a Herald rule.
+- Tested against a stub model, not a real LLM, and not with real MCP toolsets.
 
 ## Tests
 

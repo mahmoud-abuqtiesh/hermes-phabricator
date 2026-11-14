@@ -49,6 +49,10 @@ optional_env:
     description: "Listener bind host (default 127.0.0.1)"
     prompt: "Listener host"
     password: false
+  - name: PHABRICATOR_WEBHOOK_PATH
+    description: "Listener path (default /phabricator/webhook)"
+    prompt: "Webhook path"
+    password: false
   - name: PHABRICATOR_PORT
     description: "Listener bind port (default 8646; use a distinct port per profile)"
     prompt: "Listener port"

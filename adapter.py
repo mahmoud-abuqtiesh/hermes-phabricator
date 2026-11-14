@@ -46,6 +46,7 @@ MAX_TEXT_CHARS = 8000
 # Moving a task into a column is an internal transaction that transaction.search reports with type null.
 NEW_TRIGGER_TYPES = frozenset({"create", "projects", None})
 SIGNATURE_HEADER = "X-Phabricator-Webhook-Signature"
+TURN_ERROR_COMMENT = "Could not investigate this task: the agent run failed. Mention me again to retry."
 
 
 def verify_signature(body: bytes, signature: str, secret: str) -> bool:
@@ -139,7 +140,7 @@ class PhabricatorAdapter(BasePlatformAdapter):
         self.skill = str(setting("skill", "PHABRICATOR_SKILL")).strip()
         self.host = str(setting("host", "PHABRICATOR_HOST", DEFAULT_HOST))
         self.port = _int(setting("port", "PHABRICATOR_PORT", DEFAULT_PORT), DEFAULT_PORT)
-        self.path = str(extra.get("webhook_path") or DEFAULT_PATH)
+        self.path = str(setting("webhook_path", "PHABRICATOR_WEBHOOK_PATH", DEFAULT_PATH))
         self.poll_interval = _int(setting("poll_interval", "PHABRICATOR_POLL_INTERVAL", 0), 0)
         self.poll_lookback = _int(setting("poll_lookback", "PHABRICATOR_POLL_LOOKBACK", DEFAULT_POLL_LOOKBACK), DEFAULT_POLL_LOOKBACK)
 
@@ -357,10 +358,11 @@ class PhabricatorAdapter(BasePlatformAdapter):
         return Trigger(mode, task["id"], task["phid"], title, author, text, message_id)
 
     async def _dispatch(self, trigger: Trigger) -> None:
-        chat_id = f"T{trigger.task_id}"
-        # thread_id keeps every commenter in the task's one session (group sessions are otherwise per user).
+        # The PHID (not T123) is the chat id so sessions cannot collide across Phabricator instances sharing a
+        # profile. thread_id keeps every commenter in the task's one session (group sessions are otherwise per user).
+        chat_id = trigger.task_phid
         source = self.build_source(
-            chat_id=chat_id, chat_name=f"{chat_id}: {trigger.title}", chat_type="group",
+            chat_id=chat_id, chat_name=f"T{trigger.task_id}: {trigger.title}", chat_type="group",
             user_id=trigger.author, user_name=trigger.author, thread_id=chat_id, message_id=trigger.message_id)
         await self.handle_message(MessageEvent(
             text=trigger.text, source=source, message_id=trigger.message_id,
@@ -418,6 +420,12 @@ class PhabricatorAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=str(exc), retryable=True)
         return SendResult(success=True, message_id=(result.get("transactions") or [{}])[0].get("phid"))
 
+    async def _notify_turn_error(self, event: MessageEvent, e: BaseException) -> Optional[dict]:
+        # The base notice carries exception text and is not a final reply; post one fixed line instead.
+        logger.error("Phabricator: agent run failed for %s: %s", event.source.chat_name, e)
+        await self.send(event.source.chat_id, TURN_ERROR_COMMENT, metadata={"notify": True})
+        return None
+
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         return None
 
@@ -440,12 +448,14 @@ _ENV_SEED = (
     ("PHABRICATOR_BOARD", "board", None), ("PHABRICATOR_NEW_COLUMN", "new_column", None),
     ("PHABRICATOR_SKILL", "skill", None), ("PHABRICATOR_HOST", "host", None),
     ("PHABRICATOR_PORT", "port", int), ("PHABRICATOR_POLL_INTERVAL", "poll_interval", int),
+    ("PHABRICATOR_WEBHOOK_PATH", "webhook_path", None),
 )
 _YAML_BRIDGE = (
     ("url", "PHABRICATOR_URL", "str"), ("bot_handle", "PHABRICATOR_BOT_HANDLE", "str"),
     ("board", "PHABRICATOR_BOARD", "str"), ("new_column", "PHABRICATOR_NEW_COLUMN", "str"),
     ("skill", "PHABRICATOR_SKILL", "str"), ("host", "PHABRICATOR_HOST", "str"),
     ("port", "PHABRICATOR_PORT", "str"), ("poll_interval", "PHABRICATOR_POLL_INTERVAL", "str"),
+    ("webhook_path", "PHABRICATOR_WEBHOOK_PATH", "str"),
     ("allowed_users", "PHABRICATOR_ALLOWED_USERS", "csv"), ("allow_all_users", "PHABRICATOR_ALLOW_ALL_USERS", "lower"),
 )
 
